@@ -1,0 +1,426 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LedgerSide {
+  DEBIT
+  CREDIT
+}
+
+enum StockStatus {
+  IN_STOCK
+  RESERVED
+  SOLD
+  INACTIVE
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+model User {
+  id             String       @id @default(uuid()) @db.Uuid
+  username       String       @unique @db.VarChar(50)
+  displayName    String       @map("display_name") @db.VarChar(120)
+  mobile         String?      @db.VarChar(20)
+  email          String?      @db.VarChar(180)
+  passwordHash   String       @map("password_hash") @db.Text
+  passwordSalt   String?      @map("password_salt") @db.Text
+  role           UserRole
+  status         RecordStatus @default(ACTIVE)
+  lastLoginAt    DateTime?    @map("last_login_at") @db.Timestamptz
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
+  sessions       UserSession[]
+  auditLogs      AuditLog[]
+  customerCreates Customer[]  @relation("CustomerCreatedBy")
+  customerUpdates Customer[]  @relation("CustomerUpdatedBy")
+  supplierCreates Supplier[]  @relation("SupplierCreatedBy")
+  supplierUpdates Supplier[]  @relation("SupplierUpdatedBy")
+  designCreates   Design[]    @relation("DesignCreatedBy")
+  designUpdates   Design[]    @relation("DesignUpdatedBy")
+  stockCreates    StockItem[] @relation("StockCreatedBy")
+  stockUpdates    StockItem[] @relation("StockUpdatedBy")
+  saleCreates        Sale[]         @relation("SaleCreatedBy")
+  saleUpdates        Sale[]         @relation("SaleUpdatedBy")
+  quotationCreates   Quotation[]    @relation("QuotationCreatedBy")
+  quotationUpdates   Quotation[]    @relation("QuotationUpdatedBy")
+  ledgerCreates      CustomerLedgerEntry[] @relation("LedgerCreatedBy")
+  ledgerUpdates      CustomerLedgerEntry[] @relation("LedgerUpdatedBy")
+  supplierLedgerCreates SupplierLedgerEntry[] @relation("SupplierLedgerCreatedBy")
+  supplierLedgerUpdates SupplierLedgerEntry[] @relation("SupplierLedgerUpdatedBy")
+
+  @@map("users")
+}
+
+model UserSession {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  refreshToken  String    @unique @map("refresh_token") @db.Text
+  userAgent     String?   @map("user_agent") @db.Text
+  ipAddress     String?   @map("ip_address") @db.VarChar(80)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@map("user_sessions")
+}
+
+model Customer {
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String?      @unique @db.VarChar(30)
+  name        String?      @db.VarChar(150)
+  company     String?      @db.VarChar(180)
+  mobile      String?      @db.VarChar(20)
+  address     String?      @db.Text
+  city        String?      @db.VarChar(100)
+  state       String?      @db.VarChar(100)
+  country     String?      @default("India") @db.VarChar(100)
+  gst         String?      @db.VarChar(15)
+  pan         String?      @db.VarChar(10)
+  remarks     String?      @db.Text
+  status      RecordStatus @default(ACTIVE)
+  createdById String?      @map("created_by") @db.Uuid
+  updatedById String?      @map("updated_by") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz
+  createdBy   User?        @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User?        @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
+  sales       Sale[]
+  quotations  Quotation[]
+  ledgerEntries CustomerLedgerEntry[]
+
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@map("customers")
+}
+
+model Supplier {
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String?      @unique @db.VarChar(30)
+  name        String?      @db.VarChar(150)
+  company     String?      @db.VarChar(180)
+  mobile      String?      @db.VarChar(20)
+  address     String?      @db.Text
+  city        String?      @db.VarChar(100)
+  state       String?      @db.VarChar(100)
+  country     String?      @default("India") @db.VarChar(100)
+  gst         String?      @db.VarChar(15)
+  pan         String?      @db.VarChar(10)
+  remarks     String?      @db.Text
+  status      RecordStatus @default(ACTIVE)
+  createdById String?      @map("created_by") @db.Uuid
+  updatedById String?      @map("updated_by") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz
+  createdBy   User?        @relation("SupplierCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User?        @relation("SupplierUpdatedBy", fields: [updatedById], references: [id])
+  ledgerEntries SupplierLedgerEntry[]
+
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@map("suppliers")
+}
+
+model Category {
+  id            String        @id @default(uuid()) @db.Uuid
+  code          String?       @unique @db.VarChar(30)
+  name          String?       @unique @db.VarChar(120)
+  description   String?       @db.Text
+  status        RecordStatus  @default(ACTIVE)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz
+  subCategories SubCategory[]
+  designs       Design[]
+  stockItems    StockItem[]
+
+  @@map("categories")
+}
+
+model SubCategory {
+  id          String       @id @default(uuid()) @db.Uuid
+  categoryId  String?      @map("category_id") @db.Uuid
+  code        String?      @unique @db.VarChar(30)
+  name        String?      @db.VarChar(120)
+  description String?      @db.Text
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  designs     Design[]
+  stockItems  StockItem[]
+
+  @@unique([categoryId, name])
+  @@map("sub_categories")
+}
+
+model Design {
+  id             String        @id @default(uuid()) @db.Uuid
+  designNo       String?       @unique @map("design_no") @db.VarChar(40)
+  designDate     DateTime?     @map("design_date") @db.Date
+  categoryId     String?       @map("category_id") @db.Uuid
+  subCategoryId  String?       @map("sub_category_id") @db.Uuid
+  metalQuality   String?       @map("metal_quality") @db.VarChar(50)
+  grossWeight    Decimal?      @map("gross_weight") @db.Decimal(12, 3)
+  netWeight      Decimal?      @map("net_weight") @db.Decimal(12, 3)
+  diamondWeight  Decimal?      @map("diamond_weight") @db.Decimal(12, 3)
+  diamondPieces  Int?          @map("diamond_pieces")
+  stoneWeight    Decimal?      @map("stone_weight") @db.Decimal(12, 3)
+  stonePieces    Int?          @map("stone_pieces")
+  diamondSizes   Json?         @map("diamond_sizes")
+  diamondColor   String?       @map("diamond_color") @db.VarChar(50)
+  diamondQuality String?       @map("diamond_quality") @db.VarChar(50)
+  remarks        String?       @db.Text
+  status         RecordStatus  @default(ACTIVE)
+  createdById    String?       @map("created_by") @db.Uuid
+  updatedById    String?       @map("updated_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime?     @map("deleted_at") @db.Timestamptz
+  category       Category?     @relation(fields: [categoryId], references: [id])
+  subCategory    SubCategory?  @relation(fields: [subCategoryId], references: [id])
+  images         DesignImage[]
+  stockItems     StockItem[]
+  createdBy      User?         @relation("DesignCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?         @relation("DesignUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@map("designs")
+}
+
+model DesignImage {
+  id               String   @id @default(uuid()) @db.Uuid
+  designId         String   @map("design_id") @db.Uuid
+  storageProvider  String   @default("IDRIVE_E2") @map("storage_provider") @db.VarChar(50)
+  bucket           String   @db.VarChar(120)
+  objectKey        String   @map("object_key") @db.Text
+  originalFilename String?  @map("original_filename") @db.VarChar(255)
+  mimeType         String?  @map("mime_type") @db.VarChar(120)
+  sizeBytes        BigInt?  @map("size_bytes")
+  isPrimary        Boolean  @default(true) @map("is_primary")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  design           Design   @relation(fields: [designId], references: [id])
+
+  @@index([designId, isPrimary(sort: Desc)])
+  @@map("design_images")
+}
+
+model StockItem {
+  id             String      @id @default(uuid()) @db.Uuid
+  tagNo          String?     @unique @map("tag_no") @db.VarChar(40)
+  productName    String?     @map("product_name") @db.VarChar(255)
+  designId       String?     @map("design_id") @db.Uuid
+  designNo       String?     @map("design_no") @db.VarChar(40)
+  categoryId     String?     @map("category_id") @db.Uuid
+  subCategoryId  String?     @map("sub_category_id") @db.Uuid
+  metalQuality   String?     @map("metal_quality") @db.VarChar(50)
+  grossWeight    Decimal?    @map("gross_weight") @db.Decimal(12, 3)
+  netWeight      Decimal?    @map("net_weight") @db.Decimal(12, 3)
+  pureWeight     Decimal?    @map("pure_weight") @db.Decimal(12, 3)
+  diamondWeight  Decimal?    @map("diamond_weight") @db.Decimal(12, 3)
+  diamondQuality String?     @map("diamond_quality") @db.VarChar(50)
+  diamondColor   String?     @map("diamond_color") @db.VarChar(50)
+  diamondPieces  Int?        @map("diamond_pieces")
+  diamondSizes   Json?       @map("diamond_sizes")
+  stoneWeight    Decimal?    @map("stone_weight") @db.Decimal(12, 3)
+
+  remarks        String?     @db.Text
+  status         StockStatus @default(IN_STOCK)
+  createdById    String?     @map("created_by") @db.Uuid
+  updatedById    String?     @map("updated_by") @db.Uuid
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz
+  design         Design?     @relation(fields: [designId], references: [id])
+  category       Category?   @relation(fields: [categoryId], references: [id])
+  subCategory    SubCategory? @relation(fields: [subCategoryId], references: [id])
+  createdBy      User?       @relation("StockCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?       @relation("StockUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@index([status, deletedAt])
+  @@map("stock_items")
+}
+
+model BusinessProfile {
+  id            String   @id @default(uuid()) @db.Uuid
+  businessName  String   @map("business_name") @db.VarChar(180)
+  ownerName     String?  @map("owner_name") @db.VarChar(150)
+  mobile        String?  @db.VarChar(20)
+  email         String?  @db.VarChar(180)
+  gst           String?  @db.VarChar(15)
+  pan           String?  @db.VarChar(10)
+  address       String?  @db.Text
+  city          String?  @db.VarChar(100)
+  state         String?  @db.VarChar(100)
+  country       String   @default("India") @db.VarChar(100)
+  logoObjectKey String?  @map("logo_object_key") @db.Text
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("business_profile")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  entityType String   @map("entity_type") @db.VarChar(80)
+  entityId   String?  @map("entity_id") @db.Uuid
+  action     String   @db.VarChar(40)
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address") @db.VarChar(80)
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model Sale {
+  id              String       @id @default(uuid()) @db.Uuid
+  invoiceNo       String?      @unique @map("invoice_no") @db.VarChar(50)
+  customerId      String?      @map("customer_id") @db.Uuid
+  customerName    String?      @map("customer_name") @db.VarChar(150)
+  date            DateTime?    @map("date") @db.Date
+  invoiceType     String?      @map("invoice_type") @db.VarChar(80)
+  taxType         String?      @map("tax_type") @db.VarChar(80)
+  
+  // Sold Items / Job Info (Simplified for now based on form)
+  selectedJob     String?      @map("selected_job") @db.VarChar(100)
+  stockType       String?      @map("stock_type") @db.VarChar(50)
+  purityRatio     Decimal?     @map("purity_ratio") @db.Decimal(12, 3)
+  wastage         Decimal?     @map("wastage") @db.Decimal(12, 3)
+  metalRate       Decimal?     @map("metal_rate") @db.Decimal(12, 2)
+  diamondRate     Decimal?     @map("diamond_rate") @db.Decimal(12, 2)
+  stoneRate       Decimal?     @map("stone_rate") @db.Decimal(12, 2)
+  stoneRateOnPcs  Boolean      @default(false) @map("stone_rate_on_pcs")
+  miscRate        Decimal?     @map("misc_rate") @db.Decimal(12, 2)
+  discPercent     Decimal?     @map("disc_percent") @db.Decimal(5, 2)
+  discAmt         Decimal?     @map("disc_amt") @db.Decimal(12, 2)
+  metal           String?      @db.VarChar(50)
+  labourRate      Decimal?     @map("labour_rate") @db.Decimal(12, 2)
+  items           Json?        @map("items") @db.JsonB
+
+  status          RecordStatus @default(ACTIVE)
+  createdById     String?      @map("created_by") @db.Uuid
+  updatedById     String?      @map("updated_by") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz
+
+  customer        Customer?    @relation(fields: [customerId], references: [id])
+  createdBy       User?        @relation("SaleCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User?        @relation("SaleUpdatedBy", fields: [updatedById], references: [id])
+
+  ledgerEntries CustomerLedgerEntry[]
+
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@index([customerId, deletedAt])
+  @@map("sales")
+}
+
+model Quotation {
+  id           String       @id @default(uuid()) @db.Uuid
+  customerId   String?      @map("customer_id") @db.Uuid
+  customerCode String?      @map("customer_code") @db.VarChar(30)
+  customerName String?      @map("customer_name") @db.VarChar(150)
+  items        Json         @map("items") @db.JsonB
+  totalGross   Decimal      @default(0) @map("total_gross") @db.Decimal(12, 3)
+  totalNet     Decimal      @default(0) @map("total_net") @db.Decimal(12, 3)
+  totalPure    Decimal      @default(0) @map("total_pure") @db.Decimal(12, 3)
+  totalDiamond Decimal      @default(0) @map("total_diamond") @db.Decimal(12, 3)
+  itemCount    Int          @default(0) @map("item_count")
+  status       RecordStatus @default(ACTIVE)
+  createdById  String?      @map("created_by") @db.Uuid
+  updatedById  String?      @map("updated_by") @db.Uuid
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt    DateTime?    @map("deleted_at") @db.Timestamptz
+
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+  createdBy   User?        @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User?        @relation("QuotationUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@map("quotations")
+}
+
+model CustomerLedgerEntry {
+  id             String       @id @default(uuid()) @db.Uuid
+  customerId     String       @map("customer_id") @db.Uuid
+  saleId         String?      @map("sale_id") @db.Uuid
+  date           DateTime     @map("date") @db.Date
+  invoiceNo      String?      @map("invoice_no") @db.VarChar(50)
+  particular     String?      @db.VarChar(255)
+  remarks        String?      @db.Text
+  side           LedgerSide
+  goldGm         Decimal?     @map("gold_gm") @db.Decimal(12, 3)
+  diamondCarat   Decimal?     @map("diamond_carat") @db.Decimal(12, 3)
+  stoneCarat     Decimal?     @map("stone_carat") @db.Decimal(12, 3)
+  otherMetalsGm  Decimal?     @map("other_metals_gm") @db.Decimal(12, 3)
+  totalAmount    Decimal?     @map("total_amount") @db.Decimal(14, 2)
+  status         RecordStatus @default(ACTIVE)
+  createdById    String?      @map("created_by") @db.Uuid
+  updatedById    String?      @map("updated_by") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
+
+  customer       Customer     @relation(fields: [customerId], references: [id])
+  sale           Sale?        @relation(fields: [saleId], references: [id])
+  createdBy      User?        @relation("LedgerCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?        @relation("LedgerUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([customerId, date(sort: Desc)])
+  @@index([saleId])
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@map("customer_ledger_entries")
+}
+
+model SupplierLedgerEntry {
+  id             String       @id @default(uuid()) @db.Uuid
+  supplierId     String       @map("supplier_id") @db.Uuid
+  date           DateTime     @map("date") @db.Date
+  invoiceNo      String?      @map("invoice_no") @db.VarChar(50)
+  particular     String?      @db.VarChar(255)
+  remarks        String?      @db.Text
+  side           LedgerSide
+  goldGm         Decimal?     @map("gold_gm") @db.Decimal(12, 3)
+  diamondCarat   Decimal?     @map("diamond_carat") @db.Decimal(12, 3)
+  stoneCarat     Decimal?     @map("stone_carat") @db.Decimal(12, 3)
+  otherMetalsGm  Decimal?     @map("other_metals_gm") @db.Decimal(12, 3)
+  totalAmount    Decimal?     @map("total_amount") @db.Decimal(14, 2)
+  status         RecordStatus @default(ACTIVE)
+  createdById    String?      @map("created_by") @db.Uuid
+  updatedById    String?      @map("updated_by") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime?    @map("deleted_at") @db.Timestamptz
+
+  supplier       Supplier     @relation(fields: [supplierId], references: [id])
+  createdBy      User?        @relation("SupplierLedgerCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?        @relation("SupplierLedgerUpdatedBy", fields: [updatedById], references: [id])
+
+  @@index([supplierId, date(sort: Desc)])
+  @@index([deletedAt, createdAt(sort: Desc)])
+  @@map("supplier_ledger_entries")
+}

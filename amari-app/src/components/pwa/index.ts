@@ -1,0 +1,1 @@
+export { PwaRegister } from "./PwaRegister";

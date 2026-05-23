@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Amari Jewels icon</title>
+  <desc id="desc">A gold jewelry mark with the letter A and a faceted jewel.</desc>
+  <rect width="512" height="512" rx="96" fill="#fbfaf7" />
+  <rect x="40" y="40" width="432" height="432" rx="76" fill="#fffefb" stroke="#d8c7ad" stroke-width="12" />
+  <path d="M256 86 374 214 256 430 138 214 256 86Z" fill="#d6a85d" />
+  <path d="M138 214h236M190 214l66-128 66 128M190 214l66 216 66-216" fill="none" stroke="#8a5a2b" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M202 338 256 170l54 168" fill="none" stroke="#fff8e8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M224 278h64" fill="none" stroke="#fff8e8" stroke-width="22" stroke-linecap="round" />
+</svg>

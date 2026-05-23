@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#8a5a2b" />
+    <title>Amari Jewels is offline</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --background: #fbfaf7;
+        --foreground: #211c18;
+        --muted: #6d6258;
+        --accent: #8a5a2b;
+        --line: #ded6cc;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      main {
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        padding: 24px;
+      }
+
+      section {
+        width: min(100%, 480px);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 32px;
+        box-shadow: 0 18px 50px rgba(33, 28, 24, 0.08);
+      }
+
+      img {
+        display: block;
+        height: 56px;
+        width: 56px;
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(28px, 7vw, 40px);
+        line-height: 1.05;
+      }
+
+      p {
+        margin: 0 0 24px;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      a {
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #ffffff;
+        font-weight: 700;
+        padding: 0 18px;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section aria-labelledby="offline-title">
+        <img src="/icons/icon.svg" alt="" />
+        <h1 id="offline-title">You are offline</h1>
+        <p>
+          Amari Jewels needs a connection for live business records. Reconnect and try again.
+        </p>
+        <a href="/">Try again</a>
+      </section>
+    </main>
+  </body>
+</html>
