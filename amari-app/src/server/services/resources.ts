@@ -164,7 +164,10 @@ export function collectionHandlers(config: ResourceConfig) {
       try {
         await enforceRead(req);
         const page = toInt(req.nextUrl.searchParams.get("page"), 1);
-        const pageSize = Math.min(toInt(req.nextUrl.searchParams.get("pageSize"), 20), 100);
+        const rawPageSize = req.nextUrl.searchParams.get("pageSize");
+        const pageSize = rawPageSize === "all" || rawPageSize === "-1" 
+          ? 10000 
+          : Math.min(toInt(rawPageSize, 20), 100);
         const where = listWhere(req, config);
         const [items, total] = await Promise.all([
           delegate(config).findMany({

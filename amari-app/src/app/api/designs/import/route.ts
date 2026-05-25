@@ -155,14 +155,14 @@ export async function POST(req: NextRequest) {
         // Normalize diamond sizes: map from string arrays or size/qty objects to client's format 'size:quantity'
         const diamondSizes = Array.isArray(row.diamondSizes)
           ? row.diamondSizes
-              .map((s) => {
-                if (typeof s === "string") return s;
-                if (typeof s === "object" && s !== null && "size" in s) {
-                  return `${s.size}:${s.quantity || 0}`;
-                }
-                return "";
-              })
-              .filter(Boolean)
+            .map((s) => {
+              if (typeof s === "string") return s;
+              if (typeof s === "object" && s !== null && "size" in s) {
+                return `${s.size}:${s.quantity || 0}`;
+              }
+              return "";
+            })
+            .filter(Boolean)
           : [];
 
         // Check if designNo already exists
@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
         newCategoriesCount,
         newSubCategoriesCount,
       };
-    });
+    }, { maxWait: 10000, timeout: 120000 });
 
     return ok({ success: true, ...result });
   } catch (error) {

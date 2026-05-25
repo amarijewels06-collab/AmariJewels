@@ -86,14 +86,40 @@ export async function generateSaleInvoicePdf(
     }
   }
 
+  // ── Fetch Business Profile ──
+  let businessName = "AMARI JEWELS";
+  let businessMobile = "";
+  try {
+    const profileRes = await fetch("/api/profile/business");
+    if (profileRes.ok) {
+      const profile = await profileRes.json();
+      if (profile.name) businessName = profile.name;
+      if (profile.mobile) businessMobile = profile.mobile;
+    }
+  } catch {
+    // fallback
+  }
+
   // ── Header ──
   doc.setFontSize(20);
   doc.text("Sales Invoice", 148, 20, { align: "center" });
 
   doc.setFontSize(12);
-  doc.text(`Invoice No: ${sale.invoice_no || "DRAFT"}`, 14, 30);
-  doc.text(`Date: ${sale.date}`, 14, 36);
+  doc.setFont("helvetica", "bold");
+  doc.text(businessName, 14, 30);
+  
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  let leftY = 36;
+  if (businessMobile) {
+    doc.text(`Mobile: ${businessMobile}`, 14, leftY);
+    leftY += 6;
+  }
+  
+  doc.text(`Invoice No: ${sale.invoice_no || "DRAFT"}`, 14, leftY);
+  doc.text(`Date: ${sale.date}`, 14, leftY + 6);
 
+  doc.setFontSize(12);
   doc.text("Customer Details:", 200, 30);
   doc.setFontSize(10);
   doc.text(`Name: ${sale.customer_name || "N/A"}`, 200, 36);

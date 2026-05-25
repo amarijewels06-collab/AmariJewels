@@ -1,8 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { LayoutGrid, List, Search } from "lucide-react";
+import { type ReactNode, useState, useEffect } from "react";
+import { LayoutGrid, List, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "./field";
+import { Button } from "./button";
 
 export type Column<T> = {
   className?: string;
@@ -24,6 +25,8 @@ type DataTableProps<T> = {
   setSearch: (value: string) => void;
   setViewMode?: (mode: ViewMode) => void;
   viewMode?: ViewMode;
+  pagination?: boolean;
+  itemsPerPage?: number;
 };
 
 export function DataTable<T>({
@@ -37,9 +40,24 @@ export function DataTable<T>({
   setSearch,
   setViewMode,
   viewMode = "list",
+  pagination = false,
+  itemsPerPage = 20,
 }: DataTableProps<T>) {
   const showToggle = Boolean(gridRender && setViewMode);
   const isGrid = viewMode === "grid" && Boolean(gridRender);
+
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset to first page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalPages = Math.ceil(rows.length / itemsPerPage);
+  
+  const displayRows = pagination 
+    ? rows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+    : rows;
 
   return (
     <div className="grid gap-4">
@@ -99,13 +117,13 @@ export function DataTable<T>({
 
       {/* Grid view */}
       {isGrid ? (
-        rows.length === 0 ? (
+        displayRows.length === 0 ? (
           <div className="rounded-lg border border-zinc-200 bg-white px-4 py-12 text-center text-sm text-zinc-500">
             {empty}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {rows.map((row, index) => (
+            {displayRows.map((row, index) => (
               <div key={index}>{gridRender!(row)}</div>
             ))}
           </div>
@@ -125,7 +143,7 @@ export function DataTable<T>({
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {rows.map((row, index) => (
+                {displayRows.map((row, index) => (
                   <tr className="align-top hover:bg-zinc-50/70" key={index}>
                     {columns.map((column) => (
                       <td className={`px-4 py-3 ${column.className ?? ""}`} key={column.key}>
@@ -134,7 +152,7 @@ export function DataTable<T>({
                     ))}
                   </tr>
                 ))}
-                {rows.length === 0 ? (
+                {displayRows.length === 0 ? (
                   <tr>
                     <td className="px-4 py-12 text-center text-sm text-zinc-500" colSpan={columns.length}>
                       {empty}
@@ -146,6 +164,39 @@ export function DataTable<T>({
           </div>
         </div>
       )}
+
+      {/* Pagination Controls */}
+      {pagination && totalPages > 1 ? (
+        <div className="flex items-center justify-between border-t border-zinc-200 pt-4 px-2">
+          <p className="text-sm text-zinc-500">
+            Showing <span className="font-medium text-zinc-900">{(currentPage - 1) * itemsPerPage + 1}</span> to{" "}
+            <span className="font-medium text-zinc-900">
+              {Math.min(currentPage * itemsPerPage, rows.length)}
+            </span>{" "}
+            of <span className="font-medium text-zinc-900">{rows.length}</span> results
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

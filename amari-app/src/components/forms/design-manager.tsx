@@ -51,34 +51,18 @@ type Customer = {
 
 type Quotation = {
   id: string;
-  created_at: string;
+  createdAt: string;
   items: Design[];
-  total_gross: number;
-  total_net: number;
-  total_pure: number;
-  total_diamond: number;
-  item_count: number;
+  totalGross: number | string;
+  totalNet: number | string;
+  totalPure: number | string;
+  totalDiamond: number | string;
+  itemCount: number;
   customer?: Customer;
+  customerId?: string | null;
 };
 
-const QUOTATIONS_KEY = "amari_quotations";
 
-function loadQuotations(): Quotation[] {
-  try {
-    const raw = localStorage.getItem(QUOTATIONS_KEY);
-    return raw ? (JSON.parse(raw) as Quotation[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveQuotations(list: Quotation[]) {
-  try {
-    localStorage.setItem(QUOTATIONS_KEY, JSON.stringify(list));
-  } catch {
-    // storage full — ignore
-  }
-}
 
 const emptyDesign = (categoryId: string): Design => ({
   category_id: categoryId,
@@ -126,6 +110,7 @@ export function DesignManager() {
   const [activeTab, setActiveTab] = useState<"designs" | "quotations">("designs");
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [redownloading, setRedownloading] = useState<string | null>(null);
+  const [quotationCustomerFilter, setQuotationCustomerFilter] = useState("ALL");
   const { customers: rawCustomers } = useAppData();
   // Map shared context customers to the full Customer shape used by this component
   const customers: Customer[] = rawCustomers.map((c) => ({
@@ -154,22 +139,24 @@ export function DesignManager() {
 
   const fetchData = () => {
     setLoading(true);
+    const t = Date.now();
     Promise.all([
-      readJson<Record<string, unknown>>("/api/designs"),
-      readJson<Record<string, unknown>>("/api/settings/categories"),
-      readJson<Record<string, unknown>>("/api/settings/sub-categories"),
+      readJson<Record<string, unknown>>(`/api/designs?pageSize=all&t=${t}`),
+      readJson<Record<string, unknown>>(`/api/settings/categories?pageSize=all&t=${t}`),
+      readJson<Record<string, unknown>>(`/api/settings/sub-categories?pageSize=all&t=${t}`),
+      readJson<Quotation>(`/api/quotations?t=${t}`),
     ])
-      .then(([designRows, categoryRows, subCategoryRows]) => {
+      .then(([designRows, categoryRows, subCategoryRows, quotationRows]) => {
         setRows(designRows.map(normalizeDesign));
         setCategories(categoryRows.map(normalizeCategoryOption).filter((item) => item.id && item.name));
         setSubCategories(subCategoryRows.map(normalizeSubCategoryOption).filter((item) => item.id && item.name));
+        setQuotations(quotationRows as Quotation[]);
       })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     fetchData();
-    setQuotations(loadQuotations());
   }, []);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -195,8 +182,8 @@ export function DesignManager() {
     try {
       const XLSX = await import("xlsx");
       const headers = [
-        "Design No", "Date", "Category", "Sub Category", "Metal Quality", "Gross Weight", 
-        "Diamond Weight", "Diamond Pieces", "CS Weight", "CS Pieces", "Diamond Sizes", 
+        "Design No", "Date", "Category", "Sub Category", "Metal Quality", "Gross Weight",
+        "Diamond Weight", "Diamond Pieces", "CS Weight", "CS Pieces", "Diamond Sizes",
         "Diamond Color", "Diamond Quality", "Remarks", "Status"
       ];
       const sampleRows = [
@@ -235,7 +222,7 @@ export function DesignManager() {
           "Status": "ACTIVE"
         }
       ];
-      
+
       const ws = XLSX.utils.json_to_sheet(sampleRows, { header: headers });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Designs");
@@ -251,18 +238,18 @@ export function DesignManager() {
     try {
       const XLSX = await import("xlsx");
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const data = e.target?.result;
           const workbook = XLSX.read(data, { type: "binary", cellDates: true });
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
-          
+
           const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
-          
+
           const mapped = rawRows.map((row, index) => {
             const getVal = (possibleNames: string[]) => {
-              const foundKey = Object.keys(row).find(k => 
+              const foundKey = Object.keys(row).find(k =>
                 possibleNames.some(p => k.trim().toLowerCase().replace(/[^a-z0-9]/g, "") === p.trim().toLowerCase().replace(/[^a-z0-9]/g, ""))
               );
               return foundKey ? String(row[foundKey]).trim() : "";
@@ -295,13 +282,13 @@ export function DesignManager() {
             const status = (getVal(["status"]) || "ACTIVE").toUpperCase() === "INACTIVE" ? "INACTIVE" : "ACTIVE";
 
             const sizesStr = getVal(["diamondsizes", "sizes"]);
-            const diamondSizes = sizesStr 
+            const diamondSizes = sizesStr
               ? sizesStr.split(",").map(item => {
-                  const parts = item.trim().split(":");
-                  const size = parts[0]?.trim() || "";
-                  const quantity = parseInt(parts[1]?.trim() || "0") || 0;
-                  return { size, quantity };
-                }).filter(s => s.size !== "")
+                const parts = item.trim().split(":");
+                const size = parts[0]?.trim() || "";
+                const quantity = parseInt(parts[1]?.trim() || "0") || 0;
+                return { size, quantity };
+              }).filter(s => s.size !== "")
               : [];
 
             const diamondGram = diamondWeight * 0.2;
@@ -330,7 +317,7 @@ export function DesignManager() {
             }
 
             if (categoryName && subCategoryName) {
-              const subExists = subCategories.some(s => 
+              const subExists = subCategories.some(s =>
                 s.name.toLowerCase() === subCategoryName.toLowerCase() &&
                 categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase())?.id === s.category_id
               );
@@ -339,10 +326,7 @@ export function DesignManager() {
               }
             }
 
-            const designExists = rows.some(r => r.design_no.toLowerCase() === designNo.toLowerCase());
-            if (designNo && designExists) {
-              warnings.push(`Design '${designNo}' already exists and will be updated`);
-            }
+            // (The `designExists` check has been moved outside the map to an API call)
 
             return {
               rowNum: index + 2,
@@ -367,6 +351,40 @@ export function DesignManager() {
               warnings
             };
           });
+
+          const designNoCounts = new Map<string, number[]>();
+          mapped.forEach((row, idx) => {
+            if (row.designNo) {
+              const key = row.designNo.toLowerCase();
+              if (!designNoCounts.has(key)) designNoCounts.set(key, []);
+              designNoCounts.get(key)!.push(idx);
+            }
+          });
+
+          designNoCounts.forEach((indices) => {
+            if (indices.length > 1) {
+              indices.forEach(idx => {
+                mapped[idx].errors.push(`Duplicate Design No '${mapped[idx].designNo}' within the Excel file. Each row must have a unique Design No.`);
+              });
+            }
+          });
+
+          // Third pass: check against database for existing designs via API
+          const designNosToCheck = mapped.map(r => r.designNo).filter(Boolean);
+          if (designNosToCheck.length > 0) {
+            try {
+              const existingData = await writeJson<any>("/api/designs/check", "POST", { designNos: designNosToCheck });
+              const existingArr = Array.isArray(existingData) ? existingData : (existingData?.data || []);
+              const existingSet = new Set(existingArr.map((d: string) => d.toLowerCase()));
+              mapped.forEach(r => {
+                if (r.designNo && existingSet.has(r.designNo.toLowerCase())) {
+                  r.warnings.push(`Design '${r.designNo}' already exists and will be updated`);
+                }
+              });
+            } catch (err) {
+              console.error("Failed to check existing designs", err);
+            }
+          }
 
           setParsedRows(mapped);
         } catch (err) {
@@ -433,6 +451,14 @@ export function DesignManager() {
       );
     });
   }, [category, rows, search, status]);
+
+  const filteredQuotations = useMemo(() => {
+    return quotations.filter((q) => {
+      if (quotationCustomerFilter === "ALL") return true;
+      if (quotationCustomerFilter === "NONE") return !q.customer?.id && !q.customerId;
+      return q.customer?.id === quotationCustomerFilter || q.customerId === quotationCustomerFilter;
+    });
+  }, [quotations, quotationCustomerFilter]);
 
   function calculateWeights(item: Design): Partial<Design> {
     const gross = parseFloat(item.gross_weight || "0") || 0;
@@ -515,24 +541,80 @@ export function DesignManager() {
 
       const selectedCustomer = customers.find((c) => c.id === selectedCustomerId) ?? null;
 
+      // ── Fetch Business Profile ──
+      let businessName = "AMARI JEWELS";
+      let businessMobile = "";
+      try {
+        const profileRes = await fetch("/api/profile/business");
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          if (profile.name) businessName = profile.name;
+          if (profile.mobile) businessMobile = profile.mobile;
+        }
+      } catch { }
+
+      // ── Fetch Images ──
+      const designNos = [...new Set(cart.map((i) => i.design_no).filter(Boolean))];
+      const imageDataMap: Record<string, string> = {};
+      if (designNos.length > 0) {
+        try {
+          const res = await fetch("/api/designs/images-by-design-nos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ designNos }),
+          });
+          if (res.ok) {
+            const { images } = await res.json();
+            await Promise.all(
+              Object.entries(images).map(async ([dNo, url]) => {
+                try {
+                  const imgRes = await fetch(url as string);
+                  if (!imgRes.ok) return;
+                  const blob = await imgRes.blob();
+                  const bmp = await createImageBitmap(blob);
+                  const canvas = document.createElement("canvas");
+                  const maxDim = 120;
+                  const scale = Math.min(maxDim / bmp.width, maxDim / bmp.height, 1);
+                  canvas.width = Math.round(bmp.width * scale);
+                  canvas.height = Math.round(bmp.height * scale);
+                  const ctx = canvas.getContext("2d");
+                  if (!ctx) return;
+                  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+                  imageDataMap[dNo] = canvas.toDataURL("image/jpeg", 0.85);
+                } catch { }
+              })
+            );
+          }
+        } catch { }
+      }
+
       // ── Header ──
       doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text("Design Quotation", 14, 18);
+      doc.text("Design Quotation", 105, 18, { align: "center" });
 
       const today = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+      // ── Business Info (left) ──
+      doc.setFontSize(11);
+      doc.text(businessName, 14, 25);
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
+      let leftY = 30;
+      if (businessMobile) {
+        doc.text(`Mobile: ${businessMobile}`, 14, leftY);
+        leftY += 5;
+      }
       doc.setTextColor(120);
-      doc.text(`Date: ${today}`, 14, 25);
+      doc.text(`Date: ${today}`, 14, leftY);
       doc.setTextColor(0);
 
-      // ── Customer block (top-left, like postcard) ──
-      let tableStartY = 32;
+      // ── Customer block (right) ──
+      let tableStartY = Math.max(38, leftY + 8);
       if (selectedCustomer) {
         doc.setFontSize(9);
         doc.setFont("helvetica", "bold");
-        doc.text("To:", 14, 33);
+        doc.text("To:", 130, 25);
         doc.setFont("helvetica", "normal");
 
         const lines: string[] = [];
@@ -545,8 +627,8 @@ export function DesignManager() {
         if (selectedCustomer.gst) lines.push(`GSTIN: ${selectedCustomer.gst}`);
         if (selectedCustomer.pan) lines.push(`PAN: ${selectedCustomer.pan}`);
 
-        lines.forEach((line, i) => doc.text(line, 20, 40 + i * 5));
-        tableStartY = 44 + lines.length * 5;
+        lines.forEach((line, i) => doc.text(line, 136, 30 + i * 4));
+        tableStartY = Math.max(tableStartY, 34 + lines.length * 4);
       }
 
       const totalGross = cart.reduce((sum, item) => sum + (parseFloat(item.gross_weight || "0") || 0), 0);
@@ -554,7 +636,11 @@ export function DesignManager() {
       const totalPure = cart.reduce((sum, item) => sum + (parseFloat(item.pure_weight || "0") || 0), 0);
       const totalDiamond = cart.reduce((sum, item) => sum + (parseFloat(item.diamond_weight || "0") || 0), 0);
 
+      const hasImages = Object.keys(imageDataMap).length > 0;
+      const IMG_CELL_SIZE = 12;
+
       const body = cart.map(item => [
+        "", // Image placeholder
         item.design_no,
         item.metal_quality,
         parseFloat(item.gross_weight || "0").toFixed(3),
@@ -565,6 +651,7 @@ export function DesignManager() {
       ]);
 
       body.push([
+        "", // empty for image
         "TOTAL", "-",
         totalGross.toFixed(3),
         totalNet.toFixed(3),
@@ -575,11 +662,25 @@ export function DesignManager() {
 
       autoTable(doc, {
         startY: tableStartY,
-        head: [["Design No", "Karat", "Gross (g)", "Net (g)", "Pure (g)", "Diamond (ct)", "Diamond Sizes"]],
+        head: [["Image", "Design No", "Karat", "Gross (g)", "Net (g)", "Pure (g)", "Diamond (ct)", "Diamond Sizes"]],
         body,
         theme: "grid",
         headStyles: { fillColor: [24, 24, 27] },
-        willDrawCell: function (data) {
+        columnStyles: {
+          0: { cellWidth: hasImages ? IMG_CELL_SIZE + 2 : 6, minCellHeight: hasImages ? IMG_CELL_SIZE + 2 : undefined },
+        },
+        didDrawCell: function (data: any) {
+          if (data.section === "body" && data.column.index === 0 && data.row.index < body.length - 1) {
+            const item = cart[data.row.index];
+            const imgData = item?.design_no ? imageDataMap[item.design_no] : null;
+            if (imgData) {
+              try {
+                doc.addImage(imgData, "JPEG", data.cell.x + 1, data.cell.y + 1, IMG_CELL_SIZE, IMG_CELL_SIZE);
+              } catch { }
+            }
+          }
+        },
+        willDrawCell: function (data: any) {
           if (data.row.index === body.length - 1) {
             doc.setFont("helvetica", "bold");
             data.cell.styles.fillColor = [244, 244, 245];
@@ -591,22 +692,26 @@ export function DesignManager() {
       setIsCartOpen(false);
 
       // --- Save quotation record ---
-      const record: Quotation = {
-        id: crypto.randomUUID(),
-        created_at: new Date().toISOString(),
+      const payload = {
+        customerId: selectedCustomer?.id || undefined,
+        customerCode: selectedCustomer?.code || undefined,
+        customerName: selectedCustomer?.name || undefined,
         items: cart.map((item) => ({ ...item })),
-        total_gross: totalGross,
-        total_net: totalNet,
-        total_pure: totalPure,
-        total_diamond: totalDiamond,
-        item_count: cart.length,
-        customer: selectedCustomer ?? undefined,
+        totalGross,
+        totalNet,
+        totalPure,
+        totalDiamond,
+        itemCount: cart.length,
       };
-      setQuotations((prev) => {
-        const updated = [record, ...prev];
-        saveQuotations(updated);
-        return updated;
-      });
+
+      try {
+        const res = await writeJson<any>("/api/quotations", "POST", payload);
+        if (res && !res.error) {
+          setQuotations((prev) => [res as Quotation, ...prev]);
+        }
+      } catch (err) {
+        console.error("Failed to save quotation to DB", err);
+      }
     } catch (error) {
       console.error("Failed to generate PDF", error);
     } finally {
@@ -621,27 +726,83 @@ export function DesignManager() {
       const { default: autoTable } = await import("jspdf-autotable");
       const doc = new jsPDF();
 
-      const dateStr = new Date(q.created_at).toLocaleDateString("en-IN", {
+      const dateStr = new Date(q.createdAt).toLocaleDateString("en-IN", {
         day: "2-digit", month: "short", year: "numeric",
       });
+
+      // ── Fetch Business Profile ──
+      let businessName = "AMARI JEWELS";
+      let businessMobile = "";
+      try {
+        const profileRes = await fetch("/api/profile/business");
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          if (profile.name) businessName = profile.name;
+          if (profile.mobile) businessMobile = profile.mobile;
+        }
+      } catch { }
+
+      // ── Fetch Images ──
+      const designNos = [...new Set(q.items.map((i) => i.design_no).filter(Boolean))];
+      const imageDataMap: Record<string, string> = {};
+      if (designNos.length > 0) {
+        try {
+          const res = await fetch("/api/designs/images-by-design-nos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ designNos }),
+          });
+          if (res.ok) {
+            const { images } = await res.json();
+            await Promise.all(
+              Object.entries(images).map(async ([dNo, url]) => {
+                try {
+                  const imgRes = await fetch(url as string);
+                  if (!imgRes.ok) return;
+                  const blob = await imgRes.blob();
+                  const bmp = await createImageBitmap(blob);
+                  const canvas = document.createElement("canvas");
+                  const maxDim = 120;
+                  const scale = Math.min(maxDim / bmp.width, maxDim / bmp.height, 1);
+                  canvas.width = Math.round(bmp.width * scale);
+                  canvas.height = Math.round(bmp.height * scale);
+                  const ctx = canvas.getContext("2d");
+                  if (!ctx) return;
+                  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+                  imageDataMap[dNo] = canvas.toDataURL("image/jpeg", 0.85);
+                } catch { }
+              })
+            );
+          }
+        } catch { }
+      }
 
       // ── Header ──
       doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text("Design Quotation", 14, 18);
+      doc.text("Design Quotation", 105, 18, { align: "center" });
+
+      // ── Business Info (left) ──
+      doc.setFontSize(11);
+      doc.text(businessName, 14, 25);
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
+      let leftY = 30;
+      if (businessMobile) {
+        doc.text(`Mobile: ${businessMobile}`, 14, leftY);
+        leftY += 5;
+      }
       doc.setTextColor(120);
-      doc.text(`Date: ${dateStr}`, 14, 25);
+      doc.text(`Date: ${dateStr}`, 14, leftY);
       doc.setTextColor(0);
 
-      // ── Customer block (top-left) ──
-      let tableStartY = 32;
+      // ── Customer block (right) ──
+      let tableStartY = Math.max(38, leftY + 8);
       if (q.customer) {
         const cust = q.customer;
         doc.setFontSize(9);
         doc.setFont("helvetica", "bold");
-        doc.text("To:", 14, 33);
+        doc.text("To:", 130, 25);
         doc.setFont("helvetica", "normal");
 
         const lines: string[] = [];
@@ -654,11 +815,15 @@ export function DesignManager() {
         if (cust.gst) lines.push(`GSTIN: ${cust.gst}`);
         if (cust.pan) lines.push(`PAN: ${cust.pan}`);
 
-        lines.forEach((line, i) => doc.text(line, 20, 40 + i * 5));
-        tableStartY = 44 + lines.length * 5;
+        lines.forEach((line, i) => doc.text(line, 136, 30 + i * 4));
+        tableStartY = Math.max(tableStartY, 34 + lines.length * 4);
       }
 
+      const hasImages = Object.keys(imageDataMap).length > 0;
+      const IMG_CELL_SIZE = 12;
+
       const body = q.items.map((item) => [
+        "", // Image placeholder
         item.design_no,
         item.metal_quality,
         parseFloat(item.gross_weight || "0").toFixed(3),
@@ -669,21 +834,36 @@ export function DesignManager() {
       ]);
 
       body.push([
+        "", // empty for image
         "TOTAL", "-",
-        q.total_gross.toFixed(3),
-        q.total_net.toFixed(3),
-        q.total_pure.toFixed(3),
-        q.total_diamond.toFixed(3),
+        Number(q.totalGross || 0).toFixed(3),
+        Number(q.totalNet || 0).toFixed(3),
+        Number(q.totalPure || 0).toFixed(3),
+        Number(q.totalDiamond || 0).toFixed(3),
         "-",
       ]);
 
       autoTable(doc, {
         startY: tableStartY,
-        head: [["Design No", "Karat", "Gross (g)", "Net (g)", "Pure (g)", "Diamond (ct)", "Diamond Sizes"]],
+        head: [["Image", "Design No", "Karat", "Gross (g)", "Net (g)", "Pure (g)", "Diamond (ct)", "Diamond Sizes"]],
         body,
         theme: "grid",
         headStyles: { fillColor: [24, 24, 27] },
-        willDrawCell: function (data) {
+        columnStyles: {
+          0: { cellWidth: hasImages ? IMG_CELL_SIZE + 2 : 6, minCellHeight: hasImages ? IMG_CELL_SIZE + 2 : undefined },
+        },
+        didDrawCell: function (data: any) {
+          if (data.section === "body" && data.column.index === 0 && data.row.index < body.length - 1) {
+            const item = q.items[data.row.index];
+            const imgData = item?.design_no ? imageDataMap[item.design_no] : null;
+            if (imgData) {
+              try {
+                doc.addImage(imgData, "JPEG", data.cell.x + 1, data.cell.y + 1, IMG_CELL_SIZE, IMG_CELL_SIZE);
+              } catch { }
+            }
+          }
+        },
+        willDrawCell: function (data: any) {
           if (data.row.index === body.length - 1) {
             doc.setFont("helvetica", "bold");
             data.cell.styles.fillColor = [244, 244, 245];
@@ -699,13 +879,15 @@ export function DesignManager() {
     }
   }
 
-  function deleteQuotation(id: string) {
+  async function deleteQuotation(id: string) {
     if (!window.confirm("Delete this quotation record?")) return;
-    setQuotations((prev) => {
-      const updated = prev.filter((q) => q.id !== id);
-      saveQuotations(updated);
-      return updated;
-    });
+    try {
+      await deleteJson(`/api/quotations/${id}`);
+      setQuotations((prev) => prev.filter((q) => q.id !== id));
+    } catch (err) {
+      console.error("Failed to delete quotation", err);
+      alert("Failed to delete quotation");
+    }
   }
 
   function openCartForEdit(q: Quotation) {
@@ -957,94 +1139,114 @@ export function DesignManager() {
               <p className="text-xs text-zinc-400">Export a PDF from the cart — it will appear here for future re-download.</p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-zinc-200 text-sm">
-                  <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold">Date & Time</th>
-                      <th className="px-4 py-3 text-left font-semibold">Customer</th>
-                      <th className="px-4 py-3 text-left font-semibold">Designs</th>
-                      <th className="px-4 py-3 text-left font-semibold">Gross (g)</th>
-                      <th className="px-4 py-3 text-left font-semibold">Net (g)</th>
-                      <th className="px-4 py-3 text-left font-semibold">Pure (g)</th>
-                      <th className="px-4 py-3 text-left font-semibold">Diamond (ct)</th>
-                      <th className="px-4 py-3 text-right font-semibold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                    {quotations.map((q) => {
-                      const dateStr = new Date(q.created_at).toLocaleDateString("en-IN", {
-                        day: "2-digit", month: "short", year: "numeric",
-                      });
-                      const timeStr = new Date(q.created_at).toLocaleTimeString("en-IN", {
-                        hour: "2-digit", minute: "2-digit",
-                      });
-                      return (
-                        <tr key={q.id} className="hover:bg-zinc-50/70">
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-zinc-900">{dateStr}</p>
-                            <p className="text-xs text-zinc-400">{timeStr}</p>
-                          </td>
-                          <td className="px-4 py-3">
-                            {q.customer ? (
-                              <div>
-                                <p className="font-semibold text-zinc-900 text-xs">{q.customer.code}</p>
-                                <p className="text-[11px] text-zinc-500 truncate max-w-[140px]">{q.customer.name}</p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Select
+                    value={quotationCustomerFilter}
+                    onChange={(e) => setQuotationCustomerFilter(e.target.value)}
+                    aria-label="Filter by Party"
+                    className="w-48"
+                  >
+                    <option value="ALL">All Parties</option>
+                    <option value="NONE">No Party</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.code ? `(${c.code})` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-zinc-200 text-sm">
+                    <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold">Date & Time</th>
+                        <th className="px-4 py-3 text-left font-semibold">Customer</th>
+                        <th className="px-4 py-3 text-left font-semibold">Designs</th>
+                        <th className="px-4 py-3 text-left font-semibold">Gross (g)</th>
+                        <th className="px-4 py-3 text-left font-semibold">Net (g)</th>
+                        <th className="px-4 py-3 text-left font-semibold">Pure (g)</th>
+                        <th className="px-4 py-3 text-left font-semibold">Diamond (ct)</th>
+                        <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {filteredQuotations.map((q) => {
+                        const dateStr = new Date(q.createdAt).toLocaleDateString("en-IN", {
+                          day: "2-digit", month: "short", year: "numeric",
+                        });
+                        const timeStr = new Date(q.createdAt).toLocaleTimeString("en-IN", {
+                          hour: "2-digit", minute: "2-digit",
+                        });
+                        return (
+                          <tr key={q.id} className="hover:bg-zinc-50/70">
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-zinc-900">{dateStr}</p>
+                              <p className="text-xs text-zinc-400">{timeStr}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              {q.customer ? (
+                                <div>
+                                  <p className="font-semibold text-zinc-900 text-xs">{q.customer.code}</p>
+                                  <p className="text-[11px] text-zinc-500 truncate max-w-[140px]">{q.customer.name}</p>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-zinc-400 italic">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-700">
+                                {q.itemCount} item{q.itemCount !== 1 ? "s" : ""}
+                              </span>
+                              <p className="mt-1 text-[11px] text-zinc-400 truncate max-w-[200px]">
+                                {q.items.map((i) => i.design_no).join(", ")}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3 text-zinc-700">{Number(q.totalGross || 0).toFixed(3)}</td>
+                            <td className="px-4 py-3 text-zinc-700">{Number(q.totalNet || 0).toFixed(3)}</td>
+                            <td className="px-4 py-3 text-zinc-700">{Number(q.totalPure || 0).toFixed(3)}</td>
+                            <td className="px-4 py-3 text-zinc-700">{Number(q.totalDiamond || 0).toFixed(3)}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  aria-label="Edit quotation"
+                                  onClick={() => openCartForEdit(q)}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="text-blue-500 hover:text-blue-700 hover:bg-blue-50"
+                                >
+                                  <Edit3 className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  aria-label="Download PDF"
+                                  isLoading={redownloading === q.id}
+                                  onClick={() => redownloadQuotation(q)}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="text-zinc-500 hover:text-zinc-900"
+                                >
+                                  {redownloading !== q.id && <FileDown className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                  aria-label="Delete quotation"
+                                  onClick={() => deleteQuotation(q.id)}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
-                            ) : (
-                              <span className="text-xs text-zinc-400 italic">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-700">
-                              {q.item_count} item{q.item_count !== 1 ? "s" : ""}
-                            </span>
-                            <p className="mt-1 text-[11px] text-zinc-400 truncate max-w-[200px]">
-                              {q.items.map((i) => i.design_no).join(", ")}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3 text-zinc-700">{q.total_gross.toFixed(3)}</td>
-                          <td className="px-4 py-3 text-zinc-700">{q.total_net.toFixed(3)}</td>
-                          <td className="px-4 py-3 text-zinc-700">{q.total_pure.toFixed(3)}</td>
-                          <td className="px-4 py-3 text-zinc-700">{q.total_diamond.toFixed(3)}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                aria-label="Edit quotation"
-                                onClick={() => openCartForEdit(q)}
-                                size="icon"
-                                variant="ghost"
-                                className="text-blue-500 hover:text-blue-700 hover:bg-blue-50"
-                              >
-                                <Edit3 className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                aria-label="Download PDF"
-                                isLoading={redownloading === q.id}
-                                onClick={() => redownloadQuotation(q)}
-                                size="icon"
-                                variant="ghost"
-                                className="text-zinc-500 hover:text-zinc-900"
-                              >
-                                {redownloading !== q.id && <FileDown className="h-4 w-4" />}
-                              </Button>
-                              <Button
-                                aria-label="Delete quotation"
-                                onClick={() => deleteQuotation(q.id)}
-                                size="icon"
-                                variant="ghost"
-                                className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -1053,99 +1255,101 @@ export function DesignManager() {
 
       {/* ── Designs Tab ── */}
       {activeTab === "designs" && (
-      <section className="p-4 sm:p-6 lg:p-8">
-        {message ? <div className="mb-4 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">{message}</div> : null}
-        {loading ? (
-          <Loader label="Loading designs..." />
-        ) : (
-          <DataTable
-            columns={columns}
-            empty="No designs match the current filters."
-            filters={
-              <>
-                <Select aria-label="Filter by category" onChange={(event) => setCategory(event.target.value)} value={category}>
-                  <option value="ALL">All categories</option>
-                  {categories.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </Select>
-                <Select aria-label="Filter by status" onChange={(event) => setStatus(event.target.value)} value={status}>
-                  <option value="ALL">All status</option>
-                  <option value="ACTIVE">Active</option>
-                  <option value="INACTIVE">Inactive</option>
-                </Select>
-              </>
-            }
-            gridRender={(row) => (
-              <div className="group flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-                {/* Image */}
-                <div className="relative aspect-square w-full overflow-hidden bg-zinc-100">
-                  {row.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      alt={row.design_no}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      src={row.image_url}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-zinc-300">
-                      <ImagePlus className="h-10 w-10" />
+        <section className="p-4 sm:p-6 lg:p-8">
+          {message ? <div className="mb-4 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">{message}</div> : null}
+          {loading ? (
+            <Loader label="Loading designs..." />
+          ) : (
+            <DataTable
+              columns={columns}
+              empty="No designs match the current filters."
+              filters={
+                <>
+                  <Select aria-label="Filter by category" onChange={(event) => setCategory(event.target.value)} value={category}>
+                    <option value="ALL">All categories</option>
+                    {categories.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select aria-label="Filter by status" onChange={(event) => setStatus(event.target.value)} value={status}>
+                    <option value="ALL">All status</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </Select>
+                </>
+              }
+              gridRender={(row) => (
+                <div className="group flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+                  {/* Image */}
+                  <div className="relative aspect-square w-full overflow-hidden bg-zinc-100">
+                    {row.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        alt={row.design_no}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        src={row.image_url}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-zinc-300">
+                        <ImagePlus className="h-10 w-10" />
+                      </div>
+                    )}
+                    {/* Status badge overlay */}
+                    <span
+                      className={[
+                        "absolute right-2 top-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset",
+                        row.status === "ACTIVE"
+                          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                          : "bg-rose-50 text-rose-800 ring-rose-200",
+                      ].join(" ")}
+                    >
+                      {row.status}
+                    </span>
+                  </div>
+                  {/* Info */}
+                  <div className="flex flex-1 flex-col gap-1 p-3">
+                    <p className="truncate text-sm font-semibold text-zinc-900">{row.design_no}</p>
+                    <p className="truncate text-xs text-zinc-500">{row.category_name || row.category_id}</p>
+                    <p className="text-xs text-zinc-400">{row.metal_quality} · {row.design_date}</p>
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
+                      <span>G: {row.gross_weight || "0"}g</span>
+                      <span>N: {row.net_weight || "0"}g</span>
+                      <span className="font-medium text-zinc-900">D: {row.diamond_weight || "0"}ct</span>
                     </div>
-                  )}
-                  {/* Status badge overlay */}
-                  <span
-                    className={[
-                      "absolute right-2 top-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset",
-                      row.status === "ACTIVE"
-                        ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                        : "bg-rose-50 text-rose-800 ring-rose-200",
-                    ].join(" ")}
-                  >
-                    {row.status}
-                  </span>
-                </div>
-                {/* Info */}
-                <div className="flex flex-1 flex-col gap-1 p-3">
-                  <p className="truncate text-sm font-semibold text-zinc-900">{row.design_no}</p>
-                  <p className="truncate text-xs text-zinc-500">{row.category_name || row.category_id}</p>
-                  <p className="text-xs text-zinc-400">{row.metal_quality} · {row.design_date}</p>
-                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
-                    <span>G: {row.gross_weight || "0"}g</span>
-                    <span>N: {row.net_weight || "0"}g</span>
-                    <span className="font-medium text-zinc-900">D: {row.diamond_weight || "0"}ct</span>
+                  </div>
+                  {/* Actions */}
+                  <div className="flex justify-end gap-1 border-t border-zinc-100 px-3 py-2">
+                    <Button
+                      aria-label={cart.some((c) => c.id === row.id) ? "Remove from cart" : "Add to cart"}
+                      className={cart.some((c) => c.id === row.id) ? "text-emerald-600 hover:text-emerald-700" : ""}
+                      onClick={() => toggleCart(row)}
+                      size="icon"
+                      variant="ghost"
+                    >
+                      {cart.some((c) => c.id === row.id) ? <MinusCircle className="h-4 w-4" /> : <PlusCircle className="h-4 w-4" />}
+                    </Button>
+                    <Button aria-label="Edit design" onClick={() => openDesignForm(row)} size="icon" variant="ghost">
+                      <Edit3 className="h-4 w-4" />
+                    </Button>
+                    <Button aria-label="Delete design" onClick={() => deleteDesign(row)} size="icon" variant="ghost">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-                {/* Actions */}
-                <div className="flex justify-end gap-1 border-t border-zinc-100 px-3 py-2">
-                  <Button
-                    aria-label={cart.some((c) => c.id === row.id) ? "Remove from cart" : "Add to cart"}
-                    className={cart.some((c) => c.id === row.id) ? "text-emerald-600 hover:text-emerald-700" : ""}
-                    onClick={() => toggleCart(row)}
-                    size="icon"
-                    variant="ghost"
-                  >
-                    {cart.some((c) => c.id === row.id) ? <MinusCircle className="h-4 w-4" /> : <PlusCircle className="h-4 w-4" />}
-                  </Button>
-                  <Button aria-label="Edit design" onClick={() => openDesignForm(row)} size="icon" variant="ghost">
-                    <Edit3 className="h-4 w-4" />
-                  </Button>
-                  <Button aria-label="Delete design" onClick={() => deleteDesign(row)} size="icon" variant="ghost">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-            rows={filtered}
-            search={search}
-            searchPlaceholder="Search design number, category, sub category, metal..."
-            setSearch={setSearch}
-            setViewMode={setViewMode}
-            viewMode={viewMode}
-          />
-        )}
-      </section>
+              )}
+              rows={filtered}
+              search={search}
+              searchPlaceholder="Search design number, category, sub category, metal..."
+              setSearch={setSearch}
+              setViewMode={setViewMode}
+              viewMode={viewMode}
+              pagination={true}
+              itemsPerPage={20}
+            />
+          )}
+        </section>
       )}
 
       <Dialog
@@ -1261,7 +1465,7 @@ export function DesignManager() {
                       {(editing.diamond_sizes || []).map((entry, index) => (
                         <div key={index} className="flex items-center gap-2">
                           <div className="relative flex-[2]">
-                            <Input 
+                            <Input
                               value={entry.size}
                               onChange={(e) => {
                                 const newSizes = [...(editing.diamond_sizes || [])];
@@ -1277,7 +1481,7 @@ export function DesignManager() {
                             />
                           </div>
                           <div className="relative flex-1">
-                            <Input 
+                            <Input
                               type="number"
                               value={entry.quantity || ""}
                               onChange={(e) => {
@@ -1313,7 +1517,7 @@ export function DesignManager() {
                           </Button>
                         </div>
                       ))}
-                      
+
                       <Button
                         type="button"
                         variant="secondary"
@@ -1416,8 +1620,8 @@ export function DesignManager() {
           {cart.length > 0 && (
             <div className="flex items-center justify-between gap-4 rounded-md border border-zinc-200 bg-zinc-50 p-3">
               <p className="text-xs font-medium text-zinc-600 italic">
-                {selectedCartIds.length > 0 
-                  ? `Apply Karat to ${selectedCartIds.length} selected items:` 
+                {selectedCartIds.length > 0
+                  ? `Apply Karat to ${selectedCartIds.length} selected items:`
                   : "Select items to apply bulk Karat change:"}
               </p>
               <Select
@@ -1569,7 +1773,7 @@ export function DesignManager() {
                     Upload your designs using a spreadsheet. The system supports `.xlsx`, `.xls`, or `.csv` files.
                   </p>
                 </div>
-                
+
                 <div className="space-y-2 text-xs text-zinc-600">
                   <p className="font-semibold text-zinc-800">Required Column Formats:</p>
                   <ul className="list-disc pl-4 space-y-1">
@@ -1855,13 +2059,13 @@ export function normalizeDesign(item: Record<string, unknown>): Design {
     diamond_sizes: (() => {
       const rawSizes = item.diamond_sizes ?? item.diamondSizes;
       return Array.isArray(rawSizes) ? (rawSizes as unknown[]).map((s: any) => {
-          if (typeof s === "string" && s.includes(":")) {
-            const [size, qty] = s.split(":");
-            return { size, quantity: parseInt(qty) || 0 };
-          }
-          if (typeof s === "object" && s !== null && "size" in s) return s;
-          return { size: String(s), quantity: 0 };
-        }) : [];
+        if (typeof s === "string" && s.includes(":")) {
+          const [size, qty] = s.split(":");
+          return { size, quantity: parseInt(qty) || 0 };
+        }
+        if (typeof s === "object" && s !== null && "size" in s) return s;
+        return { size: String(s), quantity: 0 };
+      }) : [];
     })(),
     diamond_weight: String(item.diamond_weight ?? item.diamondWeight ?? ""),
     gross_weight: String(item.gross_weight ?? item.grossWeight ?? ""),
@@ -1887,8 +2091,8 @@ function toDesignPayload(item: Design) {
     designDate: item.design_date,
     designNo: item.design_no,
     diamondPieces: item.diamond_pieces,
-    diamondSizes: item.diamond_sizes?.length 
-      ? item.diamond_sizes.filter(s => s.size.trim() !== "").map(s => `${s.size}:${s.quantity}`) 
+    diamondSizes: item.diamond_sizes?.length
+      ? item.diamond_sizes.filter(s => s.size.trim() !== "").map(s => `${s.size}:${s.quantity}`)
       : undefined,
     diamondWeight: item.diamond_weight,
     grossWeight: item.gross_weight,
